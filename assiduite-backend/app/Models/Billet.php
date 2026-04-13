@@ -12,6 +12,7 @@ class Billet extends Model
         'personnel_id',
         'type',
         'code_unique',
+        'qr_code',
         'motif',
         'date_validite',
         'duree_retard_minutes',

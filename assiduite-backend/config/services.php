@@ -35,4 +35,8 @@ return [
         ],
     ],
 
+    'administrative_password_reset' => [
+        'default_password' => env('ADMINISTRATIVE_PASSWORD_RESET_DEFAULT_PASSWORD', 'Password123!'),
+    ],
+
 ];

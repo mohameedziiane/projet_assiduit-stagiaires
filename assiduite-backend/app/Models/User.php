@@ -16,7 +16,9 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
-        'role_id', 
+        'role_id',
+        'must_change_password',
+        'status',
     ];
 
     protected $hidden = [
@@ -29,10 +31,10 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'must_change_password' => 'boolean',
         ];
     }
 
-    // 
     public function role()
     {
         return $this->belongsTo(Role::class);
@@ -46,5 +48,20 @@ class User extends Authenticatable
     public function stagiaire()
     {
         return $this->hasOne(Stagiaire::class);
+    }
+
+    public function submittedAdministrativePasswordResetRequests()
+    {
+        return $this->hasMany(AdministrativePasswordResetRequest::class, 'requester_user_id');
+    }
+
+    public function targetedAdministrativePasswordResetRequests()
+    {
+        return $this->hasMany(AdministrativePasswordResetRequest::class, 'target_user_id');
+    }
+
+    public function processedAdministrativePasswordResetRequests()
+    {
+        return $this->hasMany(AdministrativePasswordResetRequest::class, 'processed_by_user_id');
     }
 }

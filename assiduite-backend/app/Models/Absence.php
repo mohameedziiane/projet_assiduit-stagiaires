@@ -9,9 +9,14 @@ class Absence extends Model
     protected $fillable = [
         'stagiaire_id',
         'seance_id',
+        'type_absence',
         'statut',
         'commentaire',
         'duree_minutes'
+    ];
+
+    protected $with = [
+        'justificatif',
     ];
 
     public function stagiaire()
