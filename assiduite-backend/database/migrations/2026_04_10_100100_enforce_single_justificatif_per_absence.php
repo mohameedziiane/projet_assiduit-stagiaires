@@ -9,15 +9,33 @@ return new class extends Migration
 {
     public function up(): void
     {
-        DB::statement('
-            DELETE j1 FROM justificatifs j1
-            INNER JOIN justificatifs j2
-                ON j1.absence_id = j2.absence_id
-               AND j1.id > j2.id
-        ');
+        if (DB::getDriverName() === 'sqlite') {
+            $duplicateIds = DB::table('justificatifs')
+                ->select('id')
+                ->whereNotIn('id', function ($query) {
+                    $query->from('justificatifs')
+                        ->selectRaw('MIN(id)')
+                        ->groupBy('absence_id');
+                })
+                ->pluck('id');
 
-        $hasUniqueIndex = collect(DB::select('SHOW INDEX FROM justificatifs'))
-            ->contains(fn ($index) => $index->Key_name === 'justificatifs_absence_id_unique');
+            if ($duplicateIds->isNotEmpty()) {
+                DB::table('justificatifs')->whereIn('id', $duplicateIds)->delete();
+            }
+
+            $hasUniqueIndex = collect(DB::select("PRAGMA index_list('justificatifs')"))
+                ->contains(fn ($index) => ($index->name ?? null) === 'justificatifs_absence_id_unique');
+        } else {
+            DB::statement('
+                DELETE j1 FROM justificatifs j1
+                INNER JOIN justificatifs j2
+                    ON j1.absence_id = j2.absence_id
+                   AND j1.id > j2.id
+            ');
+
+            $hasUniqueIndex = collect(DB::select('SHOW INDEX FROM justificatifs'))
+                ->contains(fn ($index) => $index->Key_name === 'justificatifs_absence_id_unique');
+        }
 
         if (!$hasUniqueIndex) {
             Schema::table('justificatifs', function (Blueprint $table) {
@@ -28,8 +46,11 @@ return new class extends Migration
 
     public function down(): void
     {
-        $hasUniqueIndex = collect(DB::select('SHOW INDEX FROM justificatifs'))
-            ->contains(fn ($index) => $index->Key_name === 'justificatifs_absence_id_unique');
+        $hasUniqueIndex = DB::getDriverName() === 'sqlite'
+            ? collect(DB::select("PRAGMA index_list('justificatifs')"))
+                ->contains(fn ($index) => ($index->name ?? null) === 'justificatifs_absence_id_unique')
+            : collect(DB::select('SHOW INDEX FROM justificatifs'))
+                ->contains(fn ($index) => $index->Key_name === 'justificatifs_absence_id_unique');
 
         if ($hasUniqueIndex) {
             Schema::table('justificatifs', function (Blueprint $table) {

@@ -25,7 +25,7 @@ class StatsController extends Controller
 
         $totalJustificatifs = Justificatif::count();
         $justificatifsEnAttente = Justificatif::where('statut', 'en_attente')->count();
-        $justificatifsValides = Justificatif::where('statut', 'valide')->count();
+        $justificatifsValides = Justificatif::whereIn('statut', ['valide', 'accepte'])->count();
         $justificatifsRefuses = Justificatif::where('statut', 'refuse')->count();
 
         $billetsActifs = Billet::where('est_actif', true)->count();

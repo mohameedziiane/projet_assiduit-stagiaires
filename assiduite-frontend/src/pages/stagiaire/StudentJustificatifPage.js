@@ -1,12 +1,27 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import EmptyState from "../../components/ui/EmptyState";
 import { useToast } from "../../components/ui/ToastProvider";
 import api from "../../services/api";
 
+function extractApiError(err, fallback) {
+  const errors = err.response?.data?.errors;
+
+  if (errors && typeof errors === "object") {
+    const firstError = Object.values(errors)[0];
+
+    if (Array.isArray(firstError) && firstError[0]) {
+      return firstError[0];
+    }
+  }
+
+  return err.response?.data?.message || fallback;
+}
+
 function getStatusTone(statut) {
   const value = String(statut || "").toLowerCase();
 
-  if (value.includes("valide") || value.includes("justifie")) {
+  if (value.includes("accepte") || value.includes("justifie")) {
     return "success";
   }
 
@@ -14,11 +29,33 @@ function getStatusTone(statut) {
     return "warning";
   }
 
-  if (value.includes("refuse") || value.includes("rejete")) {
+  if (value.includes("refuse")) {
     return "danger";
   }
 
   return "info";
+}
+
+function formatDateTime(value) {
+  if (!value) {
+    return "Non renseigne";
+  }
+
+  return new Date(value).toLocaleString("fr-FR");
+}
+
+function formatAbsenceLabel(absence) {
+  return `${absence.seance?.date_seance || "Date inconnue"} - ${
+    absence.seance?.module || "Module non renseigne"
+  }`;
+}
+
+function getAbsenceStatusText(absence) {
+  if (absence.workflow_status === "en_attente_creation_billet") {
+    return "Justificatif accepte";
+  }
+
+  return absence.status_label || absence.workflow_label || absence.statut || "Inconnu";
 }
 
 export default function StudentJustificatifPage() {
@@ -40,30 +77,23 @@ export default function StudentJustificatifPage() {
       setError("");
 
       try {
-        const fetchAbsences = async () => {
-          const response = await api.get("/stagiaire/absences");
-          return Array.isArray(response.data) ? response.data : [];
-        };
-
-        const fetchJustificatifs = async () => {
-          const response = await api.get("/justificatifs");
-          return Array.isArray(response.data) ? response.data : [];
-        };
-
-        const [fetchedAbsences, fetchedJustificatifs] = await Promise.all([
-          fetchAbsences(),
-          fetchJustificatifs(),
+        const [absencesResponse, justificatifsResponse] = await Promise.all([
+          api.get("/stagiaire/absences"),
+          api.get("/justificatifs"),
         ]);
 
         if (isMounted) {
-          setAbsences(fetchedAbsences);
-          setJustificatifs(fetchedJustificatifs);
+          setAbsences(Array.isArray(absencesResponse.data) ? absencesResponse.data : []);
+          setJustificatifs(
+            Array.isArray(justificatifsResponse.data) ? justificatifsResponse.data : []
+          );
         }
       } catch (err) {
         if (isMounted) {
-          const nextError =
-            err.response?.data?.message ||
-            "Impossible de charger les absences a regulariser.";
+          const nextError = extractApiError(
+            err,
+            "Impossible de charger les absences a regulariser."
+          );
           setError(nextError);
           toast.error(nextError, "Justificatifs");
         }
@@ -82,12 +112,20 @@ export default function StudentJustificatifPage() {
   }, [toast]);
 
   const availableAbsences = useMemo(() => {
-    return absences.filter((absence) => !absence.justificatif);
+    return absences.filter((absence) => absence.can_upload_justificatif);
   }, [absences]);
 
-  const justificatifHistory = useMemo(() => {
-    return justificatifs;
-  }, [justificatifs]);
+  async function refreshData() {
+    const [absencesResponse, justificatifsResponse] = await Promise.all([
+      api.get("/stagiaire/absences"),
+      api.get("/justificatifs"),
+    ]);
+
+    setAbsences(Array.isArray(absencesResponse.data) ? absencesResponse.data : []);
+    setJustificatifs(
+      Array.isArray(justificatifsResponse.data) ? justificatifsResponse.data : []
+    );
+  }
 
   function handleFileChange(e) {
     setFile(e.target.files?.[0] || null);
@@ -116,23 +154,13 @@ export default function StudentJustificatifPage() {
 
     try {
       await api.post("/justificatifs", formData);
-
-      const [absencesResponse, justificatifsResponse] = await Promise.all([
-        api.get("/stagiaire/absences"),
-        api.get("/justificatifs"),
-      ]);
-
-      setAbsences(Array.isArray(absencesResponse.data) ? absencesResponse.data : []);
-      setJustificatifs(
-        Array.isArray(justificatifsResponse.data) ? justificatifsResponse.data : []
-      );
+      await refreshData();
       setSelectedAbsenceId("");
       setFile(null);
-      setMessage("Justificatif envoye avec succes.");
-      toast.success("Votre justificatif a ete transmis.");
+      setMessage("Justificatif envoye. Il est maintenant en cours de traitement.");
+      toast.success("Votre justificatif est en attente de validation.");
     } catch (err) {
-      const nextError =
-        err.response?.data?.message || "L'envoi du justificatif a echoue.";
+      const nextError = extractApiError(err, "L'envoi du justificatif a echoue.");
       setError(nextError);
       toast.error(nextError, "Envoi impossible");
     } finally {
@@ -146,7 +174,7 @@ export default function StudentJustificatifPage() {
         <div>
           <span className="stagiaire-page-eyebrow">Stagiaire</span>
           <h2>Deposer un justificatif</h2>
-          <p>Ajoutez un fichier pour regulariser une absence.</p>
+          <p>Ajoutez un document pour une absence et suivez son traitement.</p>
         </div>
       </div>
 
@@ -156,7 +184,8 @@ export default function StudentJustificatifPage() {
             <span className="stagiaire-section-tag">Depot</span>
             <h3 className="section-title">Envoyer un justificatif</h3>
             <p className="soft-text">
-              Le formulaire conserve le flux d'upload actuel, avec une presentation plus claire.
+              Formats acceptes: PDF, JPG, JPEG, PNG. Le document passe ensuite en
+              attente de revue.
             </p>
           </div>
         </div>
@@ -172,9 +201,7 @@ export default function StudentJustificatifPage() {
               <option value="">Selectionnez une absence</option>
               {availableAbsences.map((absence) => (
                 <option key={absence.id} value={absence.id}>
-                  {`${absence.seance?.date_seance || "Date inconnue"} - ${
-                    absence.seance?.module || "Module non renseigne"
-                  }`}
+                  {formatAbsenceLabel(absence)}
                 </option>
               ))}
             </select>
@@ -182,7 +209,7 @@ export default function StudentJustificatifPage() {
 
           <div className="upload-box">
             <strong>Choisir un justificatif</strong>
-            <p>Formats acceptes: PDF, JPG, PNG</p>
+            <p>Formats acceptes: PDF, JPG, JPEG, PNG</p>
             <input
               type="file"
               accept=".pdf,.jpg,.jpeg,.png"
@@ -199,13 +226,11 @@ export default function StudentJustificatifPage() {
           ) : null}
 
           {error ? (
-            <div className="status-badge danger stagiaire-inline-badge">
-              {error}
-            </div>
+            <div className="status-badge danger stagiaire-inline-badge">{error}</div>
           ) : null}
 
           {message ? (
-            <div className="status-badge info stagiaire-inline-badge">
+            <div className="status-badge warning stagiaire-inline-badge">
               {message}
             </div>
           ) : null}
@@ -226,45 +251,84 @@ export default function StudentJustificatifPage() {
             message="Toutes vos absences ont deja un justificatif enregistre."
           />
         ) : null}
+      </section>
 
-        {!loading && justificatifHistory.length > 0 ? (
-          <div className="stagiaire-history-block">
-            <div className="stagiaire-card-head">
-              <div>
-                <span className="stagiaire-section-tag">Historique</span>
-                <h3 className="section-title">Historique des justificatifs</h3>
-                <p className="soft-text">
-                  Retrouvez les justificatifs deja transmis et leur statut.
-                </p>
-              </div>
-            </div>
-
-            <div className="data-table-wrap">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Absence</th>
-                    <th>Type</th>
-                    <th>Statut</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {justificatifHistory.map((justificatif) => (
-                    <tr key={justificatif.id}>
-                      <td>{justificatif.absence?.seance?.date_seance || "Date inconnue"}</td>
-                      <td>{justificatif.type_fichier || "Non renseigne"}</td>
-                      <td>
-                        <span className={`status-badge ${getStatusTone(justificatif.statut)}`}>
-                          {justificatif.statut || "Inconnu"}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+      <section className="content-card stagiaire-module-card">
+        <div className="stagiaire-card-head">
+          <div>
+            <span className="stagiaire-section-tag">Historique</span>
+            <h3 className="section-title">Suivi des justificatifs</h3>
+            <p className="soft-text">
+              Consultez l'etat de chaque justificatif, le motif de refus et l'attente
+              de creation du billet lorsque le document est accepte.
+            </p>
           </div>
-        ) : null}
+        </div>
+
+        {!loading && justificatifs.length === 0 ? (
+          <EmptyState
+            icon="o"
+            title="Aucun justificatif depose"
+            message="Vos justificatifs apparaitront ici apres envoi."
+          />
+        ) : (
+          <div className="data-table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Absence</th>
+                  <th>Depot</th>
+                  <th>Statut justificatif</th>
+                  <th>Suivi absence</th>
+                  <th>Commentaire gestionnaire</th>
+                </tr>
+              </thead>
+              <tbody>
+                {justificatifs.map((justificatif) => (
+                  <tr key={justificatif.id}>
+                    <td>{formatAbsenceLabel(justificatif.absence || {})}</td>
+                    <td>{formatDateTime(justificatif.date_depot)}</td>
+                    <td>
+                      <span
+                        className={`status-badge ${getStatusTone(justificatif.statut)}`}
+                      >
+                        {justificatif.status_label || justificatif.statut}
+                      </span>
+                    </td>
+                    <td>
+                      <div>
+                        <span
+                          className={`status-badge ${getStatusTone(
+                            justificatif.absence?.workflow_status
+                          )}`}
+                        >
+                          {getAbsenceStatusText(justificatif.absence || {})}
+                        </span>
+                      </div>
+                      {justificatif.absence?.billet_label ? (
+                        <p className="soft-text">{justificatif.absence.billet_label}</p>
+                      ) : null}
+                      {justificatif.absence?.billet_status === "billet_cree" ? (
+                        <p>
+                          <Link to="/stagiaire/billets">Voir le billet</Link>
+                        </p>
+                      ) : null}
+                    </td>
+                    <td>
+                      {justificatif.motif_refus ? (
+                        <span>{justificatif.motif_refus}</span>
+                      ) : justificatif.reviewed_at ? (
+                        <span>Aucun commentaire.</span>
+                      ) : (
+                        <span>En attente de traitement.</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
     </div>
   );

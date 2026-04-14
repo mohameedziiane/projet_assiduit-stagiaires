@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Absence;
 use App\Models\Billet;
+use App\Models\Justificatif;
 use App\Models\Seance;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -13,84 +14,153 @@ use Illuminate\Validation\Rule;
 
 class BilletController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
-        return Billet::with(['stagiaire', 'absence', 'personnel'])->get();
+        $billets = Billet::with($this->defaultRelations());
+
+        if ($request->user()->role->nom === 'stagiaire') {
+            $stagiaire = $request->user()->stagiaire;
+
+            if (!$stagiaire) {
+                abort(403, 'Aucun profil stagiaire associe a cet utilisateur.');
+            }
+
+            $billets->where('stagiaire_id', $stagiaire->id);
+        }
+
+        return response()->json(
+            $billets->latest('id')->get()->map(fn (Billet $billet) => $this->serializeBillet($billet))
+        );
     }
 
     public function store(Request $request)
     {
         $validated = $request->validate([
             'stagiaire_id' => 'required|exists:stagiaires,id',
-            'absence_id' => 'nullable|exists:absences,id',
+            'absence_id' => 'required|exists:absences,id',
+            'justificatif_id' => 'nullable|exists:justificatifs,id',
             'personnel_id' => 'required|exists:personnels,id',
             'type' => ['required', Rule::in(['absence', 'retard', 'entree'])],
             'qr_code' => 'nullable|string|max:255',
             'motif' => 'nullable|string',
             'date_validite' => 'required|date',
-            'duree_retard_minutes' => 'nullable|integer|min:0'
+            'heure_debut' => 'nullable|date_format:H:i',
+            'heure_fin' => 'nullable|date_format:H:i|after:heure_debut',
+            'statut' => ['nullable', Rule::in(['actif', 'expire', 'utilise', 'annule'])],
+            'duree_retard_minutes' => 'nullable|integer|min:0',
         ]);
 
         $absence = $this->resolveLinkedAbsence(
-            $validated['absence_id'] ?? null,
+            (int) $validated['absence_id'],
             (int) $validated['stagiaire_id']
         );
 
+        $justificatif = $this->resolveEligibleJustificatif(
+            $absence,
+            isset($validated['justificatif_id']) ? (int) $validated['justificatif_id'] : null
+        );
+
+        if ($absence->billets()->exists()) {
+            return response()->json([
+                'message' => 'Un billet existe deja pour cette absence.',
+            ], 422);
+        }
+
         $billet = Billet::create([
             'stagiaire_id' => $validated['stagiaire_id'],
-            'absence_id' => $absence?->id,
+            'absence_id' => $absence->id,
+            'justificatif_id' => $justificatif->id,
             'personnel_id' => $validated['personnel_id'],
+            'created_by' => $request->user()->id,
             'type' => $validated['type'],
-            'code_unique' => strtoupper(Str::random(8)),
+            'code_unique' => $this->generateUniqueCode(),
             'qr_code' => $validated['qr_code'] ?? null,
             'motif' => $validated['motif'] ?? null,
             'date_validite' => $validated['date_validite'],
+            'heure_debut' => $validated['heure_debut'] ?? null,
+            'heure_fin' => $validated['heure_fin'] ?? null,
+            'statut' => $validated['statut'] ?? 'actif',
             'duree_retard_minutes' => $validated['duree_retard_minutes'] ?? null,
-            'est_actif' => true
+            'est_actif' => ($validated['statut'] ?? 'actif') === 'actif',
         ]);
 
-        return response()->json($billet, 201);
+        return response()->json($this->serializeBillet($billet->fresh($this->defaultRelations())), 201);
     }
 
-    public function show($id)
+    public function show(Request $request, $id)
     {
-        return Billet::with(['stagiaire', 'absence', 'personnel'])->findOrFail($id);
+        $billet = Billet::with($this->defaultRelations())->findOrFail($id);
+
+        if ($request->user()->role->nom === 'stagiaire') {
+            $stagiaire = $request->user()->stagiaire;
+
+            if (!$stagiaire || $billet->stagiaire_id !== $stagiaire->id) {
+                return response()->json([
+                    'message' => 'Acces refuse a ce billet.',
+                ], 403);
+            }
+        }
+
+        return response()->json($this->serializeBillet($billet));
     }
 
     public function update(Request $request, $id)
     {
-        $billet = Billet::findOrFail($id);
+        $billet = Billet::with($this->defaultRelations())->findOrFail($id);
 
         $validated = $request->validate([
             'stagiaire_id' => 'required|exists:stagiaires,id',
-            'absence_id' => 'nullable|exists:absences,id',
+            'absence_id' => 'required|exists:absences,id',
+            'justificatif_id' => 'nullable|exists:justificatifs,id',
             'personnel_id' => 'required|exists:personnels,id',
             'type' => ['required', Rule::in(['absence', 'retard', 'entree'])],
             'qr_code' => 'nullable|string|max:255',
             'motif' => 'nullable|string',
             'date_validite' => 'required|date',
+            'heure_debut' => 'nullable|date_format:H:i',
+            'heure_fin' => 'nullable|date_format:H:i|after:heure_debut',
+            'statut' => ['required', Rule::in(['actif', 'expire', 'utilise', 'annule'])],
             'duree_retard_minutes' => 'nullable|integer|min:0',
             'est_actif' => 'sometimes|boolean',
         ]);
 
         $absence = $this->resolveLinkedAbsence(
-            $validated['absence_id'] ?? null,
+            (int) $validated['absence_id'],
             (int) $validated['stagiaire_id']
         );
 
+        $justificatif = $this->resolveEligibleJustificatif(
+            $absence,
+            isset($validated['justificatif_id']) ? (int) $validated['justificatif_id'] : null
+        );
+
+        $anotherBilletExists = Billet::where('absence_id', $absence->id)
+            ->where('id', '!=', $billet->id)
+            ->exists();
+
+        if ($anotherBilletExists) {
+            return response()->json([
+                'message' => 'Un billet existe deja pour cette absence.',
+            ], 422);
+        }
+
         $billet->update([
             'stagiaire_id' => $validated['stagiaire_id'],
-            'absence_id' => $absence?->id,
+            'absence_id' => $absence->id,
+            'justificatif_id' => $justificatif->id,
             'personnel_id' => $validated['personnel_id'],
             'type' => $validated['type'],
             'qr_code' => $validated['qr_code'] ?? $billet->qr_code,
             'motif' => $validated['motif'] ?? null,
             'date_validite' => $validated['date_validite'],
+            'heure_debut' => $validated['heure_debut'] ?? null,
+            'heure_fin' => $validated['heure_fin'] ?? null,
+            'statut' => $validated['statut'],
             'duree_retard_minutes' => $validated['duree_retard_minutes'] ?? null,
-            'est_actif' => $validated['est_actif'] ?? $billet->est_actif,
+            'est_actif' => $validated['est_actif'] ?? ($validated['statut'] === 'actif'),
         ]);
 
-        return response()->json($billet);
+        return response()->json($this->serializeBillet($billet->fresh($this->defaultRelations())));
     }
 
     public function destroy($id)
@@ -166,19 +236,34 @@ class BilletController extends Controller
         return response()->json($response);
     }
 
-    private function resolveLinkedAbsence(?int $absenceId, int $stagiaireId): ?Absence
+    private function resolveLinkedAbsence(int $absenceId, int $stagiaireId): Absence
     {
-        if ($absenceId === null) {
-            return null;
-        }
-
-        $absence = Absence::findOrFail($absenceId);
+        $absence = Absence::with(['justificatif', 'billets'])->findOrFail($absenceId);
 
         if ($absence->stagiaire_id !== $stagiaireId) {
             abort(422, 'L\'absence selectionnee n\'appartient pas a ce stagiaire.');
         }
 
         return $absence;
+    }
+
+    private function resolveEligibleJustificatif(Absence $absence, ?int $justificatifId = null): Justificatif
+    {
+        $justificatif = $absence->justificatif;
+
+        if (!$justificatif) {
+            abort(422, 'Aucun justificatif n\'est lie a cette absence.');
+        }
+
+        if ($justificatifId !== null && $justificatif->id !== $justificatifId) {
+            abort(422, 'Le justificatif selectionne ne correspond pas a cette absence.');
+        }
+
+        if ($justificatif->normalized_statut !== 'accepte') {
+            abort(422, 'Le billet ne peut etre cree qu\'apres acceptation du justificatif.');
+        }
+
+        return $justificatif;
     }
 
     private function buildAuthorizationResponse(Billet $billet, string $matchedBy): array
@@ -198,6 +283,78 @@ class BilletController extends Controller
             'est_actif' => $billet->est_actif,
             'autorise' => $autorise,
             'message' => $autorise ? 'Billet autorise' : 'Billet non autorise'
+        ];
+    }
+
+    private function serializeBillet(Billet $billet): array
+    {
+        return [
+            'id' => $billet->id,
+            'stagiaire_id' => $billet->stagiaire_id,
+            'absence_id' => $billet->absence_id,
+            'justificatif_id' => $billet->justificatif_id,
+            'personnel_id' => $billet->personnel_id,
+            'created_by' => $billet->created_by,
+            'type' => $billet->type,
+            'motif' => $billet->motif,
+            'date_validite' => optional($billet->date_validite)->toISOString(),
+            'heure_debut' => $billet->heure_debut,
+            'heure_fin' => $billet->heure_fin,
+            'statut' => $billet->statut ?? ($billet->est_actif ? 'actif' : 'expire'),
+            'code_unique' => $billet->code_unique,
+            'qr_code' => $billet->qr_code,
+            'duree_retard_minutes' => $billet->duree_retard_minutes,
+            'est_actif' => (bool) $billet->est_actif,
+            'created_at' => optional($billet->created_at)->toISOString(),
+            'stagiaire' => $billet->stagiaire ? [
+                'id' => $billet->stagiaire->id,
+                'nom' => $billet->stagiaire->nom,
+                'prenom' => $billet->stagiaire->prenom,
+                'matricule' => $billet->stagiaire->matricule,
+            ] : null,
+            'absence' => $billet->absence ? [
+                'id' => $billet->absence->id,
+                'type_absence' => $billet->absence->type_absence,
+                'statut' => $billet->absence->statut,
+                'seance' => $billet->absence->seance ? [
+                    'id' => $billet->absence->seance->id,
+                    'module' => $billet->absence->seance->module,
+                    'date_seance' => $billet->absence->seance->date_seance,
+                    'heure_debut' => $billet->absence->seance->heure_debut,
+                    'heure_fin' => $billet->absence->seance->heure_fin,
+                    'salle' => $billet->absence->seance->salle,
+                ] : null,
+            ] : null,
+            'justificatif' => $billet->justificatif ? [
+                'id' => $billet->justificatif->id,
+                'statut' => $billet->justificatif->normalized_statut,
+            ] : null,
+            'personnel' => $billet->personnel ? [
+                'id' => $billet->personnel->id,
+                'nom' => $billet->personnel->nom,
+                'prenom' => $billet->personnel->prenom,
+                'fonction' => $billet->personnel->fonction,
+            ] : null,
+        ];
+    }
+
+    private function generateUniqueCode(): string
+    {
+        do {
+            $code = 'BLT-' . strtoupper(Str::random(8));
+        } while (Billet::where('code_unique', $code)->exists());
+
+        return $code;
+    }
+
+    private function defaultRelations(): array
+    {
+        return [
+            'stagiaire',
+            'absence.seance',
+            'justificatif',
+            'personnel',
+            'createdBy',
         ];
     }
 }

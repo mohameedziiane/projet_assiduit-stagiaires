@@ -5,6 +5,7 @@ import {
   FaChartBar,
   FaDoorOpen,
   FaFileUpload,
+  FaIdCard,
   FaTimes,
   FaUser,
   FaUserClock,
@@ -15,6 +16,7 @@ const menuItems = [
   { label: "Tableau de bord", path: "/stagiaire/dashboard", icon: FaChartBar },
   { label: "Mes absences", path: "/stagiaire/absences", icon: FaUserClock },
   { label: "Justificatif", path: "/stagiaire/justificatif", icon: FaFileUpload },
+  { label: "Mes billets", path: "/stagiaire/billets", icon: FaIdCard },
   { label: "Statistiques", path: "/stagiaire/statistiques", icon: FaChartBar },
   { label: "Profil", path: "/stagiaire/profil", icon: FaUser },
 ];

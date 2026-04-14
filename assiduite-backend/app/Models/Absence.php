@@ -38,4 +38,12 @@ class Absence extends Model
     {
         return $this->hasMany(Billet::class);
     }
+
+    public function hasPendingBilletCreation(): bool
+    {
+        return $this->statut === 'justifiee'
+            && $this->justificatif
+            && $this->justificatif->normalized_statut === 'accepte'
+            && !$this->billets()->exists();
+    }
 }

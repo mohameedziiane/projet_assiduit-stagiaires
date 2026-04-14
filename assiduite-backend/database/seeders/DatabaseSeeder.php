@@ -520,7 +520,7 @@ class DatabaseSeeder extends Seeder
         $this->upsertJustificatif($absences['yassine_2'], [
             'fichier' => 'justificatifs/demo/yassine-medical.pdf',
             'type_fichier' => 'pdf',
-            'statut' => 'valide',
+            'statut' => 'accepte',
             'motif_refus' => null,
             'date_depot' => '2026-03-17 18:10:00',
         ]);
@@ -541,7 +541,7 @@ class DatabaseSeeder extends Seeder
         $this->upsertJustificatif($absences['salma_2'], [
             'fichier' => 'justificatifs/demo/salma-rdv.pdf',
             'type_fichier' => 'pdf',
-            'statut' => 'valide',
+            'statut' => 'accepte',
             'motif_refus' => null,
             'date_depot' => '2026-04-03 14:20:00',
         ]);
@@ -555,14 +555,14 @@ class DatabaseSeeder extends Seeder
         $this->upsertJustificatif($absences['omar_1'], [
             'fichier' => 'justificatifs/demo/omar-transport.pdf',
             'type_fichier' => 'pdf',
-            'statut' => 'valide',
+            'statut' => 'accepte',
             'motif_refus' => null,
             'date_depot' => '2026-03-19 16:40:00',
         ]);
         $this->upsertJustificatif($absences['anas_1'], [
             'fichier' => 'justificatifs/demo/anas-retard.pdf',
             'type_fichier' => 'pdf',
-            'statut' => 'valide',
+            'statut' => 'accepte',
             'motif_refus' => null,
             'date_depot' => '2026-03-24 15:15:00',
         ]);
@@ -576,7 +576,7 @@ class DatabaseSeeder extends Seeder
         $this->upsertJustificatif($absences['khadija_2'], [
             'fichier' => 'justificatifs/demo/khadija-transport.pdf',
             'type_fichier' => 'pdf',
-            'statut' => 'valide',
+            'statut' => 'accepte',
             'motif_refus' => null,
             'date_depot' => '2026-04-11 14:05:00',
         ]);
@@ -590,7 +590,7 @@ class DatabaseSeeder extends Seeder
         $this->upsertJustificatif($absences['meryem_4'], [
             'fichier' => 'justificatifs/demo/meryem-retard.pdf',
             'type_fichier' => 'pdf',
-            'statut' => 'valide',
+            'statut' => 'accepte',
             'motif_refus' => null,
             'date_depot' => '2026-04-14 11:05:00',
         ]);

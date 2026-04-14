@@ -1,11 +1,24 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import AbsenceTable from "../../components/student/AbsenceTable";
 import EmptyState from "../../components/ui/EmptyState";
 import { useToast } from "../../components/ui/ToastProvider";
 import api from "../../services/api";
 
-function formatStatus(status) {
-  switch (status) {
+function formatStatus(absence) {
+  if (absence.workflow_status === "en_attente_creation_billet") {
+    return "Justificatif accepte";
+  }
+
+  if (absence.workflow_status === "justificatif_en_attente") {
+    return "En attente";
+  }
+
+  if (absence.workflow_status === "justificatif_refuse") {
+    return "Justificatif refuse";
+  }
+
+  switch (absence.statut) {
     case "justifiee":
       return "Justifiee";
     case "non_justifiee":
@@ -113,7 +126,7 @@ export default function StudentAbsencesPage() {
       module: absence.seance?.module,
       trainer: absence.seance?.formateur?.nom_complet,
       duration: formatDuration(absence.duree_minutes),
-      status: formatStatus(absence.statut),
+      status: formatStatus(absence),
     }));
   }, [absences]);
 
@@ -264,8 +277,15 @@ export default function StudentAbsencesPage() {
             </div>
 
             <div className="profile-item">
-              <span>Statut</span>
-              <strong>{formatStatus(selectedAbsence.statut)}</strong>
+              <span>Statut global</span>
+              <strong>{formatStatus(selectedAbsence)}</strong>
+            </div>
+
+            <div className="profile-item">
+              <span>Suivi dossier</span>
+              <strong>
+                {selectedAbsence.workflow_label || "Aucun justificatif depose"}
+              </strong>
             </div>
 
             <div className="profile-item">
@@ -281,6 +301,30 @@ export default function StudentAbsencesPage() {
             <div className="profile-item">
               <span>Commentaire</span>
               <strong>{selectedAbsence.commentaire || "Aucun commentaire"}</strong>
+            </div>
+
+            <div className="profile-item">
+              <span>Justificatif</span>
+              <strong>
+                {selectedAbsence.justificatif?.status_label || "Aucun justificatif"}
+              </strong>
+            </div>
+
+            <div className="profile-item">
+              <span>Motif de refus</span>
+              <strong>
+                {selectedAbsence.justificatif?.motif_refus || "Aucun motif"}
+              </strong>
+            </div>
+
+            <div className="profile-item">
+              <span>Billet</span>
+              <strong>{selectedAbsence.billet_label || "Aucun billet"}</strong>
+              {selectedAbsence.billet_status === "billet_cree" ? (
+                <p>
+                  <Link to="/stagiaire/billets">Voir les details du billet</Link>
+                </p>
+              ) : null}
             </div>
           </div>
         </section>

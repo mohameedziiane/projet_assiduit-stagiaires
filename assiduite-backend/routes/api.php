@@ -65,7 +65,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/personnels/{id}', [PersonnelController::class, 'update']);
         Route::delete('/personnels/{id}', [PersonnelController::class, 'destroy']);
 
+        Route::get('/gestionnaire/justificatifs/en-attente', [JustificatifController::class, 'pending']);
         Route::put('/justificatifs/{id}/valider', [JustificatifController::class, 'valider']);
+        Route::put('/justificatifs/{id}/accepter', [JustificatifController::class, 'accepter']);
+        Route::put('/justificatifs/{id}/refuser', [JustificatifController::class, 'refuser']);
         Route::post('/notes/calculate/{stagiaire_id}', [NoteController::class, 'calculate']);
 
         Route::get('/billets', [BilletController::class, 'index']);
@@ -95,6 +98,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware('role:stagiaire')->group(function () {
         Route::post('/justificatifs', [JustificatifController::class, 'store']);
         Route::get('/stagiaire/absences', [AbsenceController::class, 'indexForAuthenticatedStagiaire']);
+        Route::get('/stagiaire/billets', [BilletController::class, 'index']);
+        Route::get('/stagiaire/billets/{id}', [BilletController::class, 'show']);
         Route::get('/stagiaire/notifications', [NotificationController::class, 'indexForAuthenticatedStagiaire']);
         Route::patch('/stagiaire/notifications/{notification}/read', [NotificationController::class, 'markAsRead']);
         Route::get('/stagiaire/stats', [StatsController::class, 'forAuthenticatedStagiaire']);
